@@ -16,23 +16,18 @@ import Network.Curl.Opts
 import System.Directory
 import qualified Data.Text as T 
 import System.FilePath
+import Config
+
+
+
+data Runtime = Runtime
+  { rtReqCount :: MVar Int
+  }
 
 
 data UrlPath
   = UrlDirectory [String]
   | UrlFile [String]
-
-
-data Config = Config
-  { cfgRootPath :: String
-  , cfgAvailableMirrors :: [Mirror]
-  , cfgCurlOpts :: [CurlOption]
-  }
-
-data Mirror = Mirror
-  { mirrorName :: String
-  , mirrorSource :: String
-  }
 
 notFound :: Response
 notFound = responseLBS
@@ -133,10 +128,14 @@ localPathExists :: LocalPath -> IO Bool
 localPathExists (LocalPath lp) = doesFileExist lp >>= \x ->
   doesDirectoryExist lp >>= \y -> (return $ x || y)
 
-handle :: Config -> Application
-handle cfg req respond =
+mkRuntime :: IO Runtime
+mkRuntime = fmap Runtime $ newMVar 0
+
+handle :: Runtime -> Config -> Application
+handle rt cfg req respond =
   case (mirrorForRequest cfg (pathInfo req)) of
     Just chosen_mirror -> do
+        modifyMVar_ (rtReqCount rt) $ pure .(\i -> i + 1)
         exist <- localPathExists lpath
         case exist of
           True -> sendFile respond lpath
